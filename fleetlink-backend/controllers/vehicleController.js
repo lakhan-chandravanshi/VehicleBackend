@@ -22,38 +22,33 @@ exports.getAvailableVehicles = async (req, res) => {
       return res.status(400).json({ error: "Missing required query parameters." });
     }
 
-    // Parse startTime and validate
+    // Parse and validate startTime
     const start = new Date(startTime);
     if (isNaN(start.getTime())) {
       return res.status(400).json({ error: "Invalid startTime format. Use ISO format." });
     }
 
-    // Calculate ride duration
+    // Calculate estimated ride duration and end time
     const rideHours = getEstimatedRideDuration(fromPincode, toPincode);
     const end = new Date(start);
     end.setHours(end.getHours() + rideHours);
 
-    // Fetch all vehicles with sufficient capacity
-    const allVehicles = await Vehicle.find({
-      capacityKg: { $gte: parseInt(capacityRequired) },
-    });
-
-    // Find vehicle IDs that are already booked in the given time window
+    // Step 1: Find vehicle IDs that are already booked in the time window
     const bookedVehicleIds = await Booking.find({
       startTime: { $lt: end },
       endTime: { $gt: start },
-    }).distinct("vehicleId");
+    }).distinct('vehicleId');
 
-    // Filter out booked vehicles
-    const availableVehicles = allVehicles.filter(
-      v => !bookedVehicleIds.includes(v._id.toString())
-    );
+    // Step 2: Fetch only vehicles with required capacity that are NOT booked
+    const availableVehicles = await Vehicle.find({
+      capacityKg: { $gte: parseInt(capacityRequired) },
+      _id: { $nin: bookedVehicleIds }, // Exclude already booked
+    });
 
-    return res.json(availableVehicles);
-
+    return res.status(200).json(availableVehicles);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error('Error fetching available vehicles:', error.message);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 };
 
